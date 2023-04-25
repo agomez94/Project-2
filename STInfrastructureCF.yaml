@@ -1,0 +1,530 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Description: StormTrooper' Multi-tier infrastructure foundation which will build the VPC's, subnet's, a basic networking structure, and some Security groups.
+# When building a Multi-tier infrastructure you have to think of alot of stuff that you will need to make all of this come to life.
+# ----------------------------------------------------------------------------------------------------------------------------------
+# QUESTIONS TO ASK YOURSELF as a Cloud DevOps Engineer:
+# ----------------------------------------------------------------------------------------------------------------------------------
+# 1. How do i build that? Coming up with a game plan and writing things out can definitely help you out.
+# 2. How do i build it so that it works? Putting the right amount of services to work together is definitely good but overdoing it can be a problem
+# 3. How do i build it at the lowest possible cost? Every company is different when it comes to the budget they have for these projects,
+#-----but every company will love you building the architecture at the lowest possible price.
+# 4. Now that it works, how do i secure it? Security is VERY important when it comes to building a complex infrastructure or when building 
+# anything that is in the publics eyes view. "Digital security is like locking your door: it doesn't stop the bad guys, but
+#  if it's strong enough they may move on to an easier target." - Paul Herbka
+# ----------------------------------------------------------------------------------------------------------------------------------
+# LETS BEGIN!
+# 
+#  
+# We begin by setting up our parameters for our infrastructure so that when we create our resources like our VPC, Subnets, etc. 
+# we can just reference them from the parameters down below
+# https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/parameters-section-structure.html
+# https://www.obstkel.com/aws-cloudformation-parameters
+# 
+Parameters:
+  VPCCIDR:
+    Description: CIDR Block for VPC
+    Type: String
+    Default: 45.0.0.0/16
+    AllowedValues:
+      - 45.0.0.0/16
+
+  PublicSubnet1Param:
+    Description: Pub Sub 1
+    Type: String
+    Default: 45.0.1.0/24
+    AllowedValues:
+      - 45.0.1.0/24
+
+  PublicSubnet2Param:
+    Description: Pub Sub 2
+    Type: String
+    Default: 45.0.2.0/24
+    AllowedValues:
+      - 45.0.2.0/24
+
+  AppSubnet1Param:
+    Description: App Sub 1
+    Type: String
+    Default: 45.0.10.0/24
+    AllowedValues:
+      - 45.0.10.0/24
+
+  AppSubnet2Param:
+    Description: App Sub 2
+    Type: String
+    Default: 45.0.11.0/24
+    AllowedValues:
+      - 45.0.11.0/24
+
+  DatabaseSubnet1Param:
+    Description: Priv Sub 1
+    Type: String
+    Default: 45.0.50.0/24
+    AllowedValues:
+      - 45.0.50.0/24
+
+  DatabaseSubnet2Param:
+    Description: Priv Sub 2
+    Type: String
+    Default: 45.0.51.0/24
+    AllowedValues:
+      - 45.0.51.0/24
+# 
+# 
+# In this next section, we will begin to list the resources that we want CloudFormation to build for us based on our requirements for our project.
+# 
+# Good read: 
+# https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-vpc.html
+# 
+# 
+Resources:
+###########
+# VPC and Network Structure
+###########
+  STVPC:
+    Type: 'AWS::EC2::VPC'
+    Properties:
+      CidrBlock: 
+        !Ref VPCCIDR
+      EnableDnsSupport: True
+      EnableDnsHostnames: True
+      InstanceTenancy: 'default'
+      Tags:
+        - Key: Name
+          Value: STVPC
+
+# https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-internetgateway.html
+
+  STInternetGateway:
+    Type: 'AWS::EC2::InternetGateway'
+
+# https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-vpc-gateway-attachment.html
+
+  AttachGateway:
+    Type: 'AWS::EC2::VPCGatewayAttachment'
+    Properties:
+      VpcId: 
+        !Ref STVPC
+      InternetGatewayId: 
+        !Ref STInternetGateway
+
+#NATs
+# https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-natgateway.html
+
+  NATGW1:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt ElasticIPAddress1.AllocationId
+      SubnetId: !Ref PublicSubnet1
+      Tags:
+        - Key: Name
+          Value: NATGW1-ST
+
+# https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-eip.html
+
+  ElasticIPAddress1:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+
+  NATGW2:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: 
+        !GetAtt ElasticIPAddress2.AllocationId
+      SubnetId: 
+        !Ref PublicSubnet2
+      Tags:
+        - Key: Name
+          Value: NATGW2-ST
+
+  ElasticIPAddress2:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+
+#Subnets
+# https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-subnet.html
+# https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/intrinsic-function-reference-getavailabilityzones.html
+  PublicSubnet1:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      VpcId: 
+        !Ref STVPC
+      CidrBlock: !Ref PublicSubnet1Param
+      MapPublicIpOnLaunch: True
+      AvailabilityZone: !Select
+        - '0'
+        - !GetAZs ''
+      Tags:
+        - Key: Name
+          Value: PublicSubnet1-ST
+
+  PublicSubnet2:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      VpcId: !Ref STVPC
+      CidrBlock: !Ref PublicSubnet2Param
+      MapPublicIpOnLaunch: True
+      AvailabilityZone: !Select
+        - '1'
+        - !GetAZs ''
+      Tags:
+        - Key: Name
+          Value: PublicSubnet2-ST
+
+  AppSubnet1:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      VpcId: !Ref STVPC
+      CidrBlock: !Ref AppSubnet1Param
+      MapPublicIpOnLaunch: False
+      AvailabilityZone: !Select
+        - '0'
+        - !GetAZs ''
+      Tags:
+        - Key: Name
+          Value: AppSubnet1
+
+  AppSubnet2:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      VpcId: !Ref STVPC
+      CidrBlock: !Ref AppSubnet2Param
+      MapPublicIpOnLaunch: False
+      AvailabilityZone: !Select
+        - '1'
+        - !GetAZs ''
+      Tags:
+        - Key: Name
+          Value: AppSubnet2
+
+  DatabaseSubnet1:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      VpcId: !Ref STVPC
+      CidrBlock: !Ref DatabaseSubnet1Param
+      MapPublicIpOnLaunch: False
+      AvailabilityZone: !Select
+        - '0'
+        - !GetAZs ''
+      Tags:
+        - Key: Name
+          Value: DatabaseSubnet1
+
+  DatabaseSubnet2:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      VpcId: !Ref STVPC
+      CidrBlock: !Ref DatabaseSubnet2Param
+      MapPublicIpOnLaunch: False
+      AvailabilityZone: !Select
+        - '1'
+        - !GetAZs ''
+      Tags:
+        - Key: Name
+          Value: DatabaseSubnet2
+
+#Routing
+# Good Read:
+# https://docs.aws.amazon.com/vpc/latest/userguide/VPC_Route_Tables.html
+#Route Tables
+  PublicRouteTable:
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !Ref STVPC
+      Tags:
+        - Key: Name
+          Value: PublicRouteTable
+
+  PrivateRouteTableAZ1:
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !Ref STVPC
+      Tags:
+        - Key: Name
+          Value: PrivateRouteTableAZ1
+
+  PrivateRouteTableAZ2:
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !Ref STVPC
+      Tags:
+        - Key: Name
+          Value: PrivateRouteTableAZ2
+#Routes
+# https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-route.html#cfn-ec2-route-destinationcidrblock
+  PublicRoute:
+    Type: 'AWS::EC2::Route'
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref STInternetGateway
+
+  PrivateRouteAZ1:
+    Type: 'AWS::EC2::Route'
+    Properties:
+      RouteTableId: !Ref PrivateRouteTableAZ1
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NATGW1
+
+  PrivateRouteAZ2:
+    Type: 'AWS::EC2::Route'
+    Properties:
+      RouteTableId: !Ref PrivateRouteTableAZ2
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NATGW2
+#Subnet Associations
+# https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-subnetroutetableassociation.html
+# Proper Association!
+  PublicSubnet1RouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnet2RouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref PublicRouteTable
+
+  AppSubnet1RouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref AppSubnet1
+      RouteTableId: !Ref PrivateRouteTableAZ1
+
+  AppSubnet2RouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref AppSubnet2
+      RouteTableId: !Ref PrivateRouteTableAZ2
+
+  DatabaseSubnet1RouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref DatabaseSubnet1
+      RouteTableId: !Ref PrivateRouteTableAZ1
+
+  DatabaseSubnet2RouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref DatabaseSubnet2
+      RouteTableId: !Ref PrivateRouteTableAZ2
+
+###########
+# Security Groups
+# https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-ec2-security-group.html
+# https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-ec2-security-group.html#cfn-ec2-securitygroup-securitygroupingress
+# https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-ec2-security-group-rule-1.html
+###########
+
+  AppInstanceSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Security Group allowing HTTP traffic for App instances
+      VpcId: !Ref STVPC
+      Tags:
+        - Key: Name
+          Value: AppInstanceSecurityGroup-ST
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+
+  RDSSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Security Group allowing DynaDB instances to have internet traffic
+      VpcId: !Ref STVPC
+      Tags:
+        - Key: Name
+          Value: RDSSecurityGroup-ST
+
+  EFSMountTargetSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Security Group allowing traffic between EFS Mount Targets and Amazon EC2 instances
+      VpcId: !Ref STVPC
+      Tags:
+        - Key: Name
+          Value: EFSMountTargetSecurityGroup-ST
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          SourceSecurityGroupId: !Ref AppInstanceSecurityGroup
+          FromPort: 80
+          ToPort: 80
+
+
+  AWSTemplateFormatVersion: 2010-09-09
+Resources:
+  myLaunchTemplate:
+    Type: 'AWS::EC2::LaunchTemplate'
+    Properties:
+      LaunchTemplateName: !Sub '${AWS::StackName}-launch-template-for-auto-scaling'
+      LaunchTemplateData:
+        NetworkInterfaces:
+          - DeviceIndex: 0
+            AssociatePublicIpAddress: true
+            Groups:
+              - sg-09ac3fa57661cd3ea
+            DeleteOnTermination: true
+        Placement:
+          Tenancy: dedicated
+        ImageId: ami-02396cdd13e9a1257
+        InstanceType: t3.micro
+        KeyName: afriend
+ 
+
+# # Auto Scaling Group
+# # 
+# # 
+#   Type: AWS::AutoScaling::AutoScalingGroup
+# Properties: 
+#   AutoScalingGroupName: StormTrooperASG
+#   AvailabilityZones: !ref
+#   # CapacityRebalance: Boolean
+#   Context: String
+#   Cooldown: 300
+#   DefaultInstanceWarmup: 0
+#   DesiredCapacity: 2
+#   DesiredCapacityType: 2
+#   HealthCheckGracePeriod: 60
+#   HealthCheckType: EC2
+#   # InstanceId: String
+#   # LaunchConfigurationName: String
+#   LaunchTemplate: 
+#     !ref StormTrooper-LT
+#   # LifecycleHookSpecificationList: 
+#   #   - LifecycleHookSpecification
+#   LoadBalancerNames: 
+#     !Ref StormTrooper-LB
+#   # MaxInstanceLifetime: Integer
+#   MaxSize: 4
+#   # MetricsCollection: 
+#   #   - MetricsCollection
+#   MinSize: 2
+#   # MixedInstancesPolicy: 
+#   #   MixedInstancesPolicy
+#   NewInstancesProtectedFromScaleIn: Boolean
+#   # NotificationConfigurations: 
+#   #   - NotificationConfiguration
+#   # PlacementGroup: String
+#   # ServiceLinkedRoleARN: String
+#   Tags: 
+#     Key: Name
+#     Value: ASG-ST
+#   TargetGroupARNs: 
+#     - String
+#   # TerminationPolicies: 
+#   #   - String
+#   # VPCZoneIdentifier: 
+#   #   - String
+
+
+# # Load Balancer
+# Type: AWS::ElasticLoadBalancing::LoadBalancer
+# Properties: 
+#   # AccessLoggingPolicy: 
+#   #   AccessLoggingPolicy
+#   # AppCookieStickinessPolicy: 
+#   #   - AppCookieStickinessPolicy
+#   # AvailabilityZones: 
+#   #   - String
+#   # ConnectionDrainingPolicy: 
+#   #   ConnectionDrainingPolicy
+#   # ConnectionSettings: 
+#   #   ConnectionSettings
+#   # CrossZone: Boolean
+#   # HealthCheck: 
+#   # #   HealthCheck
+#   # Instances: 
+#   #   - String
+#   # LBCookieStickinessPolicy: 
+#   #   - LBCookieStickinessPolicy
+#   Listeners: 
+#       InstancePort: 80
+#       InstanceProtocol: HTTP
+#       LoadBalancerPort: 80
+#       # PolicyNames: 
+#       #  - String
+#       Protocol: TCP
+#       # SSLCertificateId: String
+
+#   LoadBalancerName: StormTrooper-LB
+#   # Policies: 
+#   #   - Policies
+#   Scheme: internet-facing
+#   SecurityGroups: 
+#     !ref AppInstanceSecurityGroup
+#   Subnets: 
+#     !ref AppSubnet1Param
+#     !ref AppSubnet2Param
+#   Tags: 
+#     Name: ALB-ST
+
+# # 
+# 
+# 
+# Outputs: declares output values that you can import into other stacks (to create cross-stack references), 
+# return in response (to describe stack calls), or view on the AWS CloudFormation console.
+# https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/outputs-section-structure.html
+# 
+# 
+# 
+Outputs:
+
+  Region:
+    Description: "US-East Region"
+    Value: !Ref AWS::Region
+    
+  DatabaseSubnet1CIDR:
+    Description: "CIDR block for the DB Subnet in AZ a"
+    Value: !Ref DatabaseSubnet1Param
+
+  DatabaseSubnet2CIDR:
+    Description: "CIDR block for the DB Subnet in AZ b"
+    Value: !Ref DatabaseSubnet2Param
+
+  DatabaseSubnet1ID:
+    Description: "The Subnet ID for the DB Subnet in AZ a"
+    Value: !Ref DatabaseSubnet1
+    Export:
+      Name: "DatabaseSubnet1ID"
+
+  DatabaseSubnet2ID:
+    Description: "The Subnet ID for the DB Subnet in AZ b"
+    Value: !Ref DatabaseSubnet2
+    Export:
+      Name: "DatabaseSubnet2ID"
+
+  AppInstanceSecurityGroupID:
+    Description: "The Security Group ID for the App Instance Security Group"
+    Value: !Ref AppInstanceSecurityGroup
+    Export:
+      Name: "AppInstanceSecurityGroupID"
+
+  EFSMountTargetSecurityGroupID:
+    Description: "The Security Group ID for the EFS Mount Target"
+    Value: !Ref EFSMountTargetSecurityGroup
+    Export:
+      Name: "EFSMountTargetSecurityGroupID"
+
+  RDSSecurityGroupID:
+    Description: "The Security Group ID for the DynamoDB DB"
+    Value: !Ref RDSSecurityGroup
+    Export:
+      Name: "RDSSecurityGroupID"
+
+  VPCID:
+    Description: "The VPC ID for the StormTrooper's Project"
+    Value: !Ref STVPC
+    Export:
+      Name: "VPCID"
+
+
+
+
